@@ -64,6 +64,7 @@
     <Compile Include="Domain\RecargoAlbaranConstants.cs" />
     <Compile Include="Infrastructure\A3ErpRuntimeContext.cs" />
     <Compile Include="Infrastructure\ActiveX\AlbaranRecargoActiveXService.cs" />
+    <Compile Include="Infrastructure\Connections\A3ErpConexionActivaService.cs" />
     <Compile Include="Infrastructure\Configuration\A3ErpConfiguracionRepository.cs" />
     <Compile Include="Infrastructure\Events\A3ErpEventDataReader.cs" />
     <Compile Include="Infrastructure\Events\A3ErpEventExecutionGuard.cs" />
@@ -83,7 +84,21 @@
       <Isolated>False</Isolated>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </COMReference>
+    <COMReference Include="ADODB">
+      <WrapperTool>tlbimp</WrapperTool>
+      <VersionMinor>8</VersionMinor>
+      <VersionMajor>2</VersionMajor>
+      <Guid>2a75196c-d9eb-4129-b803-931327f72d5c</Guid>
+      <Lcid>0</Lcid>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <None Include="Docs\GRA0150Net_Documentacio_Tecnica.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="SQL\001_Crear_AT_GRA0150NET_CONFIG.sql" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

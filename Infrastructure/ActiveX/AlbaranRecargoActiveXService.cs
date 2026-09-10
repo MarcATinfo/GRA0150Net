@@ -1,5 +1,6 @@
 ﻿using System;
 using a3ERPActiveX;
+using System.Globalization;
 using GRA0150Net.Domain;
 
 namespace GRA0150Net.Infrastructure.ActiveX
@@ -100,7 +101,7 @@ namespace GRA0150Net.Infrastructure.ActiveX
         /// La línia es crea utilitzant:
         /// - CODART = 0;
         /// - UNIDADES = 1;
-        /// - DESCLIN = RECÀRREC;
+        /// - DESCLIN = RECARGO [percentatge] %;
         /// - PRCMONEDA = import calculat.
         ///
         /// El document es guarda mitjançant Anade(),
@@ -113,9 +114,13 @@ namespace GRA0150Net.Infrastructure.ActiveX
         /// <param name="importeRecargo">
         /// Import final del recàrrec ja calculat i arrodonit.
         /// </param>
+        /// <param name="porcentajeRecargo">
+        /// Percentatge vigent que s'ha de mostrar a DESCLIN.
+        /// </param>
         public void AgregarLineaRecargo(
             decimal idAlbaran,
-            decimal importeRecargo)
+            decimal importeRecargo,
+            decimal porcentajeRecargo)
         {
             if (idAlbaran <= 0m)
             {
@@ -189,14 +194,12 @@ namespace GRA0150Net.Infrastructure.ActiveX
                     RecargoAlbaranConstants.UnidadesRecargo);
 
                 /*
-                 * DESCLIN és el nostre identificador funcional
-                 * estable de la línia de recàrrec.
-                 *
-                 * No hi posem el percentatge perquè aquest
-                 * continua guardat a AT_PORC_RECARGO.
+                 * DESCLIN identifica la línia de recàrrec
+                 * i mostra el percentatge aplicat.
                  */
                 albaran.AsStringLin["DESCLIN"] =
-                    RecargoAlbaranConstants.ConceptoRecargo;
+                    CrearDescripcionRecargo(
+                        porcentajeRecargo);
 
                 /*
                  * Reafirmem explícitament les unitats.
@@ -283,15 +286,19 @@ namespace GRA0150Net.Infrastructure.ActiveX
         /// Identificador intern IDALBV de l'albarà.
         /// </param>
         /// <param name="numeroLineaAlbaran">
-        /// Valor NUMLINALB de la línia RECÀRREC.
+        /// Valor NUMLINALB de la línia RECARGO.
         /// </param>
         /// <param name="importeRecargo">
         /// Nou import final del recàrrec.
         /// </param>
+        /// <param name="porcentajeRecargo">
+        /// Percentatge vigent que s'ha de mostrar a DESCLIN.
+        /// </param>
         public void ActualizarLineaRecargo(
             decimal idAlbaran,
             decimal numeroLineaAlbaran,
-            decimal importeRecargo)
+            decimal importeRecargo,
+            decimal porcentajeRecargo)
         {
             if (idAlbaran <= 0m)
             {
@@ -356,13 +363,12 @@ namespace GRA0150Net.Infrastructure.ActiveX
                     numeroLineaAlbaran);
 
                 /*
-                 * Reafirmem el concepte reservat.
-                 *
-                 * Això garanteix que la línia continua
-                 * identificant-se funcionalment com RECÀRREC.
+                 * Actualitzem la descripció perquè mostri
+                 * el percentatge vigent.
                  */
                 albaran.AsStringLin["DESCLIN"] =
-                    RecargoAlbaranConstants.ConceptoRecargo;
+                    CrearDescripcionRecargo(
+                        porcentajeRecargo);
 
                 /*
                  * Mantenim una unitat perquè PRCMONEDA
@@ -540,6 +546,22 @@ namespace GRA0150Net.Infrastructure.ActiveX
                     }
                 }
             }
+        }
+
+        private static string CrearDescripcionRecargo(
+            decimal porcentajeRecargo)
+        {
+            string porcentaje =
+                porcentajeRecargo.ToString(
+                    "0.####",
+                    CultureInfo.GetCultureInfo(
+                        "es-ES"));
+
+            return
+                RecargoAlbaranConstants.ConceptoRecargo
+                + " "
+                + porcentaje
+                + " %";
         }
     }
 }

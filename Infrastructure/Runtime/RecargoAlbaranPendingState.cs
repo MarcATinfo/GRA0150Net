@@ -26,6 +26,8 @@ namespace GRA0150Net.Infrastructure.Runtime
         public decimal NumeroLineaAlbaran { get; set; }
 
         public decimal ImporteRecargo { get; set; }
+
+        public decimal PorcentajeRecargo { get; set; }
     }
 
     /// <summary>
@@ -58,7 +60,8 @@ namespace GRA0150Net.Infrastructure.Runtime
 
         public void EstablecerCreacion(
             decimal idAlbaran,
-            decimal importeRecargo)
+            decimal importeRecargo,
+            decimal porcentajeRecargo)
         {
             if (idAlbaran <= 0m)
             {
@@ -72,7 +75,8 @@ namespace GRA0150Net.Infrastructure.Runtime
                     TipoOperacion =
                         TipoOperacionRecargoPendiente.Crear,
                     NumeroLineaAlbaran = 0m,
-                    ImporteRecargo = importeRecargo
+                    ImporteRecargo = importeRecargo,
+                    PorcentajeRecargo = porcentajeRecargo
                 });
         }
 
@@ -81,7 +85,8 @@ namespace GRA0150Net.Infrastructure.Runtime
         /// que encara no disposa d'IDALBV definitiu.
         /// </summary>
         public void EstablecerCreacionAltaPendiente(
-            decimal importeRecargo)
+            decimal importeRecargo,
+            decimal porcentajeRecargo)
         {
             lock (_syncRoot)
             {
@@ -93,7 +98,9 @@ namespace GRA0150Net.Infrastructure.Runtime
                             TipoOperacionRecargoPendiente.Crear,
                         NumeroLineaAlbaran = 0m,
                         ImporteRecargo =
-                            importeRecargo
+                            importeRecargo,
+                        PorcentajeRecargo =
+                            porcentajeRecargo
                     };
             }
         }
@@ -101,7 +108,8 @@ namespace GRA0150Net.Infrastructure.Runtime
         public void EstablecerActualizacion(
             decimal idAlbaran,
             decimal numeroLineaAlbaran,
-            decimal importeRecargo)
+            decimal importeRecargo,
+            decimal porcentajeRecargo)
         {
             if (idAlbaran <= 0m ||
                 numeroLineaAlbaran <= 0m)
@@ -118,7 +126,9 @@ namespace GRA0150Net.Infrastructure.Runtime
                     NumeroLineaAlbaran =
                         numeroLineaAlbaran,
                     ImporteRecargo =
-                        importeRecargo
+                        importeRecargo,
+                    PorcentajeRecargo =
+                        porcentajeRecargo
                 });
         }
 

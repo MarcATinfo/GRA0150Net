@@ -123,8 +123,8 @@ namespace GRA0150Net.Services
         /// de recàrrec creada per GRA0150Net.
         ///
         /// Per seguretat no n'hi ha prou amb CODART = 0.
-        /// També s'exigeix que DESCLIN coincideixi amb
-        /// el concepte oficial o amb el concepte legacy.
+        /// També s'exigeix que DESCLIN sigui el concepte
+        /// oficial o comenci pel concepte seguit d'un espai.
         /// </summary>
         /// <param name="linea">
         /// Línia recuperada del payload d'a3ERP.
@@ -165,22 +165,14 @@ namespace GRA0150Net.Services
                 return false;
             }
 
-            /*
-             * Acceptem tant el concepte actual RECARGO
-             * com l'antic RECÀRREC.
-             *
-             * Això permet migrar de manera transparent
-             * els documents creats durant les primeres proves.
-             */
             return
                 string.Equals(
                     descripcion,
                     RecargoAlbaranConstants.ConceptoRecargo,
                     StringComparison.OrdinalIgnoreCase)
                 ||
-                string.Equals(
-                    descripcion,
-                    RecargoAlbaranConstants.ConceptoRecargoLegacy,
+                descripcion.StartsWith(
+                    RecargoAlbaranConstants.ConceptoRecargo + " ",
                     StringComparison.OrdinalIgnoreCase);
         }
 
@@ -198,15 +190,31 @@ namespace GRA0150Net.Services
         /// La pròpia línia de recàrrec queda sempre exclosa
         /// per evitar que el recàrrec s'acumuli sobre si mateix
         /// en guardats posteriors.
+        ///
+        /// També queden exclosos els articles presents
+        /// a dbo.AT_ARTICULOS_EXENTOS quan s'informen
+        /// mitjançant codigosExentos.
         /// </summary>
         /// <param name="lineas">
         /// Línies recuperades del payload de l'albarà.
+        /// </param>
+        /// <param name="codigosExentos">
+        /// Codis d'article que no han de formar part de la base.
         /// </param>
         /// <returns>
         /// Base total del recàrrec en moneda del document.
         /// </returns>
         public decimal CalcularBaseRecargo(
             IEnumerable<Dictionary<string, object>> lineas)
+        {
+            return CalcularBaseRecargo(
+                lineas,
+                null);
+        }
+
+        public decimal CalcularBaseRecargo(
+            IEnumerable<Dictionary<string, object>> lineas,
+            ISet<string> codigosExentos)
         {
             if (lineas == null)
             {
@@ -227,6 +235,13 @@ namespace GRA0150Net.Services
                  * part de la seva pròpia base de càlcul.
                  */
                 if (EsLineaRecargo(linea))
+                {
+                    continue;
+                }
+
+                if (EsArticuloExento(
+                    linea,
+                    codigosExentos))
                 {
                     continue;
                 }
@@ -255,6 +270,9 @@ namespace GRA0150Net.Services
         /// part de la base del recàrrec.
         ///
         /// La línia automàtica de recàrrec queda exclosa.
+        /// També queden exclosos els articles presents
+        /// a dbo.AT_ARTICULOS_EXENTOS.
+        ///
         /// Aquest valor s'utilitza principalment per diagnòstic
         /// i traçabilitat al log.
         /// </summary>
@@ -266,6 +284,15 @@ namespace GRA0150Net.Services
         /// </returns>
         public int ContarLineasBaseRecargo(
             IEnumerable<Dictionary<string, object>> lineas)
+        {
+            return ContarLineasBaseRecargo(
+                lineas,
+                null);
+        }
+
+        public int ContarLineasBaseRecargo(
+            IEnumerable<Dictionary<string, object>> lineas,
+            ISet<string> codigosExentos)
         {
             if (lineas == null)
             {
@@ -286,10 +313,120 @@ namespace GRA0150Net.Services
                     continue;
                 }
 
+                if (EsArticuloExento(
+                    linea,
+                    codigosExentos))
+                {
+                    continue;
+                }
+
                 numeroLineas++;
             }
 
             return numeroLineas;
+        }
+
+        /// <summary>
+        /// Retorna el nombre de línies excloses de la base
+        /// perquè el seu CODART consta a AT_ARTICULOS_EXENTOS.
+        /// </summary>
+        public int ContarLineasExcluidasPorArticulosExentos(
+            IEnumerable<Dictionary<string, object>> lineas,
+            ISet<string> codigosExentos)
+        {
+            if (lineas == null)
+            {
+                return 0;
+            }
+
+            int numeroLineas = 0;
+
+            foreach (Dictionary<string, object> linea in lineas)
+            {
+                if (linea == null ||
+                    EsLineaRecargo(linea))
+                {
+                    continue;
+                }
+
+                if (EsArticuloExento(
+                    linea,
+                    codigosExentos))
+                {
+                    numeroLineas++;
+                }
+            }
+
+            return numeroLineas;
+        }
+
+        /// <summary>
+        /// Retorna la suma de BASEMONEDA exclosa de la base
+        /// perquè el CODART consta a AT_ARTICULOS_EXENTOS.
+        /// </summary>
+        public decimal CalcularBaseExcluidaPorArticulosExentos(
+            IEnumerable<Dictionary<string, object>> lineas,
+            ISet<string> codigosExentos)
+        {
+            if (lineas == null)
+            {
+                return 0m;
+            }
+
+            decimal baseExcluida = 0m;
+
+            foreach (Dictionary<string, object> linea in lineas)
+            {
+                if (linea == null ||
+                    EsLineaRecargo(linea))
+                {
+                    continue;
+                }
+
+                if (!EsArticuloExento(
+                    linea,
+                    codigosExentos))
+                {
+                    continue;
+                }
+
+                baseExcluida +=
+                    A3ErpEventDataReader.GetRowDecimal(
+                        linea,
+                        "BASEMONEDA",
+                        0m);
+            }
+
+            return baseExcluida;
+        }
+
+        private static bool EsArticuloExento(
+            IDictionary<string, object> linea,
+            ISet<string> codigosExentos)
+        {
+            if (linea == null ||
+                codigosExentos == null ||
+                codigosExentos.Count == 0)
+            {
+                return false;
+            }
+
+            string codigoArticulo =
+                A3ErpEventDataReader.GetRowString(
+                    linea,
+                    "CODART");
+
+            codigoArticulo =
+                (codigoArticulo ?? string.Empty).Trim();
+
+            if (string.IsNullOrWhiteSpace(
+                codigoArticulo))
+            {
+                return false;
+            }
+
+            return codigosExentos.Contains(
+                codigoArticulo);
         }
 
         /// <summary>

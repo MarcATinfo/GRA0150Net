@@ -1,5 +1,6 @@
 ﻿using GRA0150Net.Domain;
 using GRA0150Net.Infrastructure.ActiveX;
+using GRA0150Net.Infrastructure.Connections;
 using GRA0150Net.Infrastructure.Configuration;
 using GRA0150Net.Infrastructure.Events;
 using GRA0150Net.Infrastructure.Logging;
@@ -72,6 +73,13 @@ namespace GRA0150Net
         /// </summary>
         private readonly A3ErpConfiguracionRepository _configuracionRepository =
             new A3ErpConfiguracionRepository();
+
+        /// <summary>
+        /// Servei que obté la connexió viva d'a3ERP
+        /// per a lectures auxiliars amb ADODB.
+        /// </summary>
+        private readonly A3ErpConexionActivaService _conexionActivaService =
+            new A3ErpConexionActivaService();
 
         /// <summary>
         /// Servei responsable de les operacions sobre albarans
@@ -163,6 +171,9 @@ namespace GRA0150Net
                     conexionSistema,
                     conexionEmpresa);
 
+                _conexionActivaService.Inicializar(
+                    _runtimeContext.BaseDatosEmpresa);
+
                 _ultimoMotivo =
                     string.Empty;
 
@@ -176,6 +187,7 @@ namespace GRA0150Net
                 bool configuracionLogDisponible =
                     _configuracionRepository
                         .TryObtenerConfiguracionLogRecargo(
+                            _conexionActivaService.ConexionEmpresa,
                             _runtimeContext.ConexionEmpresa,
                             out logActivo,
                             out rutaLog);
@@ -218,6 +230,8 @@ namespace GRA0150Net
                 _recargoPendingState.Limpiar();
                 _repintarAlbaranVentaPendiente = false;
 
+                _conexionActivaService.Finalizar();
+
                 _runtimeContext.Limpiar();
                 _ultimoMotivo = string.Empty;
 
@@ -243,6 +257,8 @@ namespace GRA0150Net
             {
                 GRA0150Logger.Informacio(
                     "Es finalitza GRA0150Net.");
+
+                _conexionActivaService.Finalizar();
 
                 _recargoPendingState.Limpiar();
 
@@ -418,9 +434,9 @@ namespace GRA0150Net
                  * Localitzem la possible línia de recàrrec.
                  *
                  * EsLineaRecargo reconeix:
-                 * - CODART = 0 + DESCLIN = RECARGO;
-                 * - CODART = 0 + DESCLIN = RECÀRREC
-                 *   per compatibilitat amb les primeres proves.
+                 * - CODART = 0;
+                 * - DESCLIN = RECARGO o començant per RECARGO
+                 *   seguit d'un espai.
                  */
                 bool existeLineaRecargo = false;
                 decimal numeroLineaRecargo = 0m;
@@ -574,13 +590,33 @@ namespace GRA0150Net
                 /*
                  * A partir d'aquí el percentatge és > 0.
                  */
+                HashSet<string> codigosArticulosExentos =
+                    _configuracionRepository
+                        .ObtenerCodigosArticulosExentos(
+                            _conexionActivaService.ConexionEmpresa,
+                            _runtimeContext.ConexionEmpresa);
+
                 decimal baseRecargo =
                     _recargoAlbaranService.CalcularBaseRecargo(
-                        lineasDetectadas);
+                        lineasDetectadas,
+                        codigosArticulosExentos);
 
                 int numeroLineasBase =
                     _recargoAlbaranService.ContarLineasBaseRecargo(
-                        lineasDetectadas);
+                        lineasDetectadas,
+                        codigosArticulosExentos);
+
+                int numeroLineasExcluidas =
+                    _recargoAlbaranService
+                        .ContarLineasExcluidasPorArticulosExentos(
+                            lineasDetectadas,
+                            codigosArticulosExentos);
+
+                decimal baseExcluida =
+                    _recargoAlbaranService
+                        .CalcularBaseExcluidaPorArticulosExentos(
+                            lineasDetectadas,
+                            codigosArticulosExentos);
 
                 decimal importeRecargo =
                     _recargoAlbaranService.CalcularImporteRecargo(
@@ -592,6 +628,7 @@ namespace GRA0150Net
                 bool configuracionDecimalesDisponible =
                     _configuracionRepository
                         .TryObtenerNumeroDecimalesPrecio(
+                            _conexionActivaService.ConexionEmpresa,
                             _runtimeContext.ConexionEmpresa,
                             out numeroDecimalesPrecio);
 
@@ -607,6 +644,12 @@ namespace GRA0150Net
                             CultureInfo.InvariantCulture),
                     "NumeroLineasBase="
                         + numeroLineasBase.ToString(
+                            CultureInfo.InvariantCulture),
+                    "NumeroLineasExcluidas="
+                        + numeroLineasExcluidas.ToString(
+                            CultureInfo.InvariantCulture),
+                    "BaseExcluida="
+                        + baseExcluida.ToString(
                             CultureInfo.InvariantCulture),
                     "BaseRecargo="
                         + baseRecargo.ToString(
@@ -756,13 +799,17 @@ namespace GRA0150Net
                     }
 
                     _recargoPendingState.EstablecerCreacionAltaPendiente(
-                        importeRecargoFinal);
+                        importeRecargoFinal,
+                        porcentajeRecargo);
 
                     GRA0150Logger.Informacio(
                         "S'ha registrat la creació pendent del recàrrec "
                         + "per a un albarà nou encara sense ID definitiu.",
                         "ImporteRecargo="
                             + importeRecargoFinal.ToString(
+                                CultureInfo.InvariantCulture),
+                        "PorcentajeRecargo="
+                            + porcentajeRecargo.ToString(
                                 CultureInfo.InvariantCulture));
 
                     return true;
@@ -792,7 +839,8 @@ namespace GRA0150Net
                     _recargoPendingState.EstablecerActualizacion(
                         idAlbaran,
                         numeroLineaRecargo,
-                        importeRecargoFinal);
+                        importeRecargoFinal,
+                        porcentajeRecargo);
 
                     GRA0150Logger.Informacio(
                         "S'ha registrat l'actualització pendent "
@@ -805,6 +853,9 @@ namespace GRA0150Net
                                 CultureInfo.InvariantCulture),
                         "ImporteRecargo="
                             + importeRecargoFinal.ToString(
+                                CultureInfo.InvariantCulture),
+                        "PorcentajeRecargo="
+                            + porcentajeRecargo.ToString(
                                 CultureInfo.InvariantCulture));
 
                     return true;
@@ -816,7 +867,8 @@ namespace GRA0150Net
                  */
                 _recargoPendingState.EstablecerCreacion(
                     idAlbaran,
-                    importeRecargoFinal);
+                    importeRecargoFinal,
+                    porcentajeRecargo);
 
                 GRA0150Logger.Informacio(
                     "S'ha registrat la creació pendent "
@@ -826,6 +878,9 @@ namespace GRA0150Net
                             CultureInfo.InvariantCulture),
                     "ImporteRecargo="
                         + importeRecargoFinal.ToString(
+                            CultureInfo.InvariantCulture),
+                    "PorcentajeRecargo="
+                        + porcentajeRecargo.ToString(
                             CultureInfo.InvariantCulture));
 
                 return true;
@@ -1025,6 +1080,9 @@ namespace GRA0150Net
                                     CultureInfo.InvariantCulture),
                             "ImporteRecargo="
                                 + operacion.ImporteRecargo.ToString(
+                                    CultureInfo.InvariantCulture),
+                            "PorcentajeRecargo="
+                                + operacion.PorcentajeRecargo.ToString(
                                     CultureInfo.InvariantCulture));
                     }
                 }
@@ -1062,6 +1120,9 @@ namespace GRA0150Net
                             CultureInfo.InvariantCulture),
                     "ImporteRecargo="
                         + operacion.ImporteRecargo.ToString(
+                            CultureInfo.InvariantCulture),
+                    "PorcentajeRecargo="
+                        + operacion.PorcentajeRecargo.ToString(
                             CultureInfo.InvariantCulture));
 
                 /*
@@ -1079,7 +1140,8 @@ namespace GRA0150Net
 
                             _albaranActiveXService.AgregarLineaRecargo(
                                 idAlbaran,
-                                operacion.ImporteRecargo);
+                                operacion.ImporteRecargo,
+                                operacion.PorcentajeRecargo);
 
                             break;
 
@@ -1088,7 +1150,8 @@ namespace GRA0150Net
                             _albaranActiveXService.ActualizarLineaRecargo(
                                 idAlbaran,
                                 operacion.NumeroLineaAlbaran,
-                                operacion.ImporteRecargo);
+                                operacion.ImporteRecargo,
+                                operacion.PorcentajeRecargo);
 
                             break;
 

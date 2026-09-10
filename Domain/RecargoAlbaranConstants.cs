@@ -31,15 +31,6 @@
         public const string ConceptoRecargo = "RECARGO";
 
         /// <summary>
-        /// Concepte utilitzat en les primeres versions
-        /// de GRA0150Net.
-        ///
-        /// Es manté temporalment per poder reconèixer
-        /// i actualitzar/eliminar línies creades anteriorment.
-        /// </summary>
-        public const string ConceptoRecargoLegacy = "RECÀRREC";
-
-        /// <summary>
         /// Unitats utilitzades per la línia de recàrrec.
         ///
         /// En ser 1, PRCMONEDA coincideix directament

@@ -18,11 +18,11 @@ A partir d'aquest percentatge, GRA0150Net:
 
 
 
-\- calcula la base del recàrrec;
+\- calcula la base del recàrrec excloent `RECARGO` i els articles exempts configurats;
 
-\- crea automàticament una línia `RECARGO`;
+\- crea automàticament una línia `RECARGO [percentatge] %`;
 
-\- actualitza la línia si canvia el percentatge;
+\- actualitza `PRCMONEDA` i `DESCLIN` si canvia el percentatge;
 
 \- elimina la línia si el percentatge passa a `0`;
 
@@ -114,7 +114,13 @@ BASEMONEDA
 
 
 
-de totes les línies de l'albarà, excloent la pròpia línia de recàrrec.
+de totes les línies de l'albarà, excloent:
+
+
+
+\- la pròpia línia de recàrrec `RECARGO`;
+
+\- qualsevol línia amb `CODART` present a `dbo.AT_ARTICULOS_EXENTOS`.
 
 
 
@@ -133,6 +139,12 @@ ImporteRecargo =
 &#x20;   BaseRecargo × AT\_PORC\_RECARGO / 100
 
 ```
+
+
+
+La taula `dbo.AT_ARTICULOS_EXENTOS` és una llista viva mantenible des d'a3ERP.
+Una mateixa referència exempta queda exclosa en totes les línies on aparegui.
+La taula es consulta de nou en cada guardat/càlcul; no hi ha cache persistent.
 
 
 
@@ -192,13 +204,34 @@ La línia creada automàticament utilitza:
 
 CODART    = 0
 
-DESCLIN   = RECARGO
+DESCLIN   = RECARGO [percentatge] %
 
 UNIDADES  = 1
 
 PRCMONEDA = import calculat
 
 ```
+
+
+
+Exemples de `DESCLIN`:
+
+
+
+```text
+
+RECARGO 6 %
+
+RECARGO 4,5 %
+
+RECARGO 4,7525 %
+
+```
+
+
+
+El percentatge es mostra amb coma decimal i sense zeros sobrants.
+Quan es modifica `AT_PORC_RECARGO`, s'actualitzen tant `PRCMONEDA` com `DESCLIN`.
 
 
 
@@ -222,6 +255,10 @@ També ha de complir:
 
 DESCLIN = RECARGO
 
+o
+
+DESCLIN comença per RECARGO seguit d'un espai
+
 ```
 
 
@@ -230,31 +267,7 @@ Això permet que existeixin altres línies amb `CODART=0` sense interferir amb e
 
 
 
-Per compatibilitat amb les primeres proves també es reconeix:
-
-
-
-```text
-
-RECÀRREC
-
-```
-
-
-
-i es normalitza a:
-
-
-
-```text
-
-RECARGO
-
-```
-
-
-
-quan la línia s'actualitza.
+Ja no existeix compatibilitat legacy amb `RECÀRREC`.
 
 
 
@@ -454,6 +467,38 @@ Per tant, el recàrrec queda creat en el mateix primer guardat de l'albarà.
 
 
 
+Les lectures auxiliars utilitzen com a via principal la connexió viva d'a3ERP:
+
+
+
+```text
+
+ADODB.Connection
+
+Enlace.GetConexionDB("EMPRESA")
+
+```
+
+
+
+La connexió ADODB es valida amb:
+
+
+
+```text
+
+SELECT DB_NAME()
+
+```
+
+
+
+La base de dades retornada ha de coincidir amb `BaseDatosEmpresa`.
+`OleDbConnection` queda només com a fallback.
+No s'utilitzen credencials hardcoded, no es registren connection strings i la `ADODB.Connection` no es tanca manualment.
+
+
+
 La configuració pròpia del desenvolupament es troba a:
 
 
@@ -503,6 +548,67 @@ Recargo\_LogActivo = True
 Recargo\_LogRuta   = C:\\Logs\\A3ErpLogs\\GRA0150Net
 
 ```
+
+
+
+\### Articles exempts
+
+
+
+La llista d'articles que no formen part de la base del recàrrec es manté a:
+
+
+
+```text
+
+dbo.AT_ARTICULOS_EXENTOS
+
+```
+
+
+
+Estructura:
+
+
+
+```text
+
+CODART      varchar(15) NOT NULL PRIMARY KEY
+
+DESCART     varchar(100) NULL
+
+FECHA_ALTA  datetime NOT NULL
+
+```
+
+
+
+`CODART` i `DESCART` mantenen els mateixos tipus que `dbo.ARTICULO`.
+La taula és l'única font de veritat; no hi ha codis hardcoded al C#.
+
+
+
+La DLL consulta:
+
+
+
+```text
+
+SELECT CODART
+
+FROM dbo.AT_ARTICULOS_EXENTOS;
+
+```
+
+
+
+Els codis es carreguen en un `HashSet<string>(StringComparer.OrdinalIgnoreCase)` i es normalitzen amb `Trim()`.
+Una taula buida és un resultat vàlid.
+
+
+
+Si la lectura falla, primer es prova ADODB, després OleDb, i finalment es continua amb un `HashSet` buit.
+En aquest cas el guardat no es bloqueja i el comportament torna a ser l'anterior: només s'exclou `RECARGO`.
 
 
 
@@ -606,6 +712,38 @@ Si la ruta principal falla durant l'execució, el logger commuta automàticament
 
 
 
+\### Diagnòstic del càlcul
+
+
+
+El log del càlcul inclou:
+
+
+
+```text
+
+NumeroLineasBase
+
+NumeroLineasExcluidas
+
+BaseExcluida
+
+BaseRecargo
+
+```
+
+
+
+`NumeroLineasBase` compta només les línies que realment entren al càlcul.
+`NumeroLineasExcluidas` compta només les línies excloses per `AT_ARTICULOS_EXENTOS`; la línia `RECARGO` no es compta aquí.
+`BaseExcluida` és el `SUM(BASEMONEDA)` de les línies excloses per articles exempts.
+
+
+
+El llistat complet de `CODART` exempts només es registra a nivell `DEBUG`.
+
+
+
 \### Retenció
 
 
@@ -676,6 +814,12 @@ GRA0150Net
 
 │   │
 
+│   ├── Connections
+
+│   │   └── A3ErpConexionActivaService.cs
+
+│   │
+
 │   ├── Events
 
 │   │   ├── A3ErpEventDataReader.cs
@@ -706,7 +850,9 @@ GRA0150Net
 
 ├── SQL
 
-│   └── 001\_Crear\_AT\_GRA0150NET\_CONFIG.sql
+│   ├── 001\_Crear\_AT\_GRA0150NET\_CONFIG.sql
+
+│   └── taula dbo.AT_ARTICULOS_EXENTOS mantinguda des d'a3ERP
 
 │
 
@@ -802,13 +948,15 @@ El desplegament requereix:
 
 2\. crear la taula `dbo.AT\_GRA0150NET\_CONFIG`;
 
-3\. configurar `Recargo\_LogActivo` i `Recargo\_LogRuta`;
+3\. crear o validar la taula `dbo.AT_ARTICULOS_EXENTOS`;
 
-4\. copiar `GRA0150Net.dll`;
+4\. configurar `Recargo\_LogActivo` i `Recargo\_LogRuta`;
 
-5\. registrar la DLL en la primera instal·lació;
+5\. copiar `GRA0150Net.dll`;
 
-6\. reiniciar a3ERP.
+6\. registrar la DLL en la primera instal·lació;
+
+7\. reiniciar a3ERP.
 
 
 
@@ -836,45 +984,71 @@ Si només s'actualitza el codi i no han canviat el GUID, el ProgId o les metadad
 
 
 
-S'han validat els casos principals següents:
+VALIDAT EN PRODUCCIÓ:
 
 
 
 ```text
 
-Alta d'albarà nou amb recàrrec               OK
+connexió ADODB                               OK
 
-Creació de RECARGO                           OK
+lectura configuració del log                 OK
 
-Actualització del percentatge                OK
+NUMDECPRC                                    OK
 
-Eliminació amb percentatge 0                 OK
+creació RECARGO                              OK
 
-Crear -> eliminar -> tornar a crear          OK
+eliminació RECARGO                           OK
 
-Base igual a 0                               OK
+protecció de recursivitat                    OK
 
-CODART=0 que no és RECARGO                   OK
+Repintar                                     OK
 
-Exclusió de RECARGO de la seva pròpia base   OK
+DESCLIN "RECARGO [percentatge] %"            OK
 
-Decimals segons NUMDECPRC                    OK
+arrodoniment a NUMDECPRC                     OK
 
-Alta amb IdDoc=0                             OK
-
-Repintat immediat del formulari              OK
-
-Protecció davant recursivitat ActiveX        OK
-
-Eliminació d'albarans amb Estado=2            OK
-
-Log principal configurable                   OK
-
-Log local de reserva                         OK
-
-Retenció de logs de 7 dies                   OK
+log principal C:\Logs\A3ErpLogs\GRA0150Net  OK
 
 ```
+
+
+
+VALIDAT EN LOCAL:
+
+
+
+```text
+
+Alta d'albarà nou amb recàrrec                         OK
+
+Actualització del percentatge                          OK
+
+Crear -> eliminar -> tornar a crear                    OK
+
+Base igual a 0                                         OK
+
+CODART=0 que no és RECARGO                             OK
+
+Exclusió de RECARGO de la seva pròpia base             OK
+
+Exclusió dinàmica via AT_ARTICULOS_EXENTOS             OK
+
+Modificació en calent de la taula sense reiniciar      OK
+
+Article eliminat de la taula torna a BaseRecargo       OK
+
+Article tornat a afegir queda immediatament exclòs     OK
+
+Log local de reserva                                   OK
+
+Retenció de logs de 7 dies                             OK
+
+```
+
+
+
+`AT_ARTICULOS_EXENTOS` encara no s'ha validat en producció.
 
 
 
@@ -900,11 +1074,15 @@ La identificació actual de la línia de recàrrec és:
 
 ```text
 
-CODART = 0
+CODART.Trim() = 0
 
 \+
 
 DESCLIN = RECARGO
+
+o
+
+DESCLIN comença per RECARGO seguit d'un espai
 
 ```
 
@@ -926,7 +1104,7 @@ que no corresponen al recàrrec.
 
 
 
-També es reconeix `RECÀRREC` per compatibilitat amb les primeres proves del desenvolupament.
+Ja no existeix compatibilitat legacy amb `RECÀRREC`.
 
 
 
