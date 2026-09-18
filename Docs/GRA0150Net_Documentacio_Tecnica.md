@@ -3,7 +3,7 @@
 **Projecte:** GRA0150Net  
 **ERP:** a3ERP  
 **Tipus:** Extensió COM .NET Framework  
-**Data de documentació:** 2026-09-10  
+**Data de documentació:** 2026-09-17  
 **Repositori:** https://github.com/MarcATinfo/GRA0150Net
 
 ---
@@ -788,7 +788,10 @@ Repintar                                     OK
 DESCLIN "RECARGO [percentatge] %"            OK
 arrodoniment a NUMDECPRC                     OK
 log principal C:\Logs\A3ErpLogs\GRA0150Net  OK
+exclusió dinàmica via AT_ARTICULOS_EXENTOS   OK
 ```
+
+El desplegament final a producció s'ha validat correctament amb el client.
 
 ### Validat en local
 
@@ -811,8 +814,6 @@ Modificació en calent de la taula sense reiniciar      OK
 Article eliminat de la taula torna a BaseRecargo       OK
 Article tornat a afegir queda immediatament exclòs     OK
 ```
-
-`AT_ARTICULOS_EXENTOS` encara no s'ha validat en producció.
 
 Exemples de càlcul validats:
 
